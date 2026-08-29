@@ -121,7 +121,9 @@ async def account_client_id(message: Message, ctx: AppContext, state: FSMContext
     await state.set_state(AddAccount.client_secret)
     await message.answer(
         "client_secret:\n\n"
-        "<i>Сообщение с секретом удалю сразу после сохранения.</i>"
+        "<i>Пришлите значение и удалите своё сообщение — Telegram не разрешает "
+        "ботам удалять сообщения собеседника. В режиме DRY-RUN подойдёт любое "
+        "слово, например test.</i>"
     )
 
 
@@ -130,6 +132,8 @@ async def account_client_secret(message: Message, ctx: AppContext, state: FSMCon
     secret = (message.text or "").strip()
     await state.clear()
     try:
+        # Обычно Telegram не даёт удалять чужие сообщения в личке, но если
+        # право есть (например, у бота-администратора) — уберём секрет из чата.
         await message.delete()
     except Exception:  # noqa: BLE001 — нет прав на удаление, не критично
         pass
@@ -141,7 +145,10 @@ async def account_client_secret(message: Message, ctx: AppContext, state: FSMCon
         await message.answer(f"Не удалось сохранить аккаунт: {esc(exc)}")
         return
     note = "" if ctx.box.enabled else "\n⚠️ SECRET_KEY не задан — секрет лежит в БД открытым."
-    await message.answer("Аккаунт сохранён." + note)
+    await message.answer(
+        "Аккаунт сохранён." + note + "\n\nЕсли ваше сообщение с секретом осталось в "
+        "чате — удалите его: долгое нажатие на сообщение → «Удалить»."
+    )
     await show_accounts(message, ctx)
 
 
