@@ -53,8 +53,16 @@ class Poller:
             self.last_result = result
             return result
 
-        niches = await self.db.list_niches()
+        # Направление без текста ответа не должно перехватывать чат у настроенного:
+        # иначе бот молча пропускает обращение, которое кто-то другой обработал бы.
+        with_reply = {
+            int(row["niche_id"])
+            for row in await self.db.list_templates(kind=KIND_REPLY, only_active=True)
+        }
+        niches = [n for n in await self.db.list_niches() if int(n["id"]) in with_reply]
         default_niche = await self.db.get_default_niche()
+        if default_niche is not None and int(default_niche["id"]) not in with_reply:
+            default_niche = None
         account_id = int(account["id"])
         followup_after = dt.timedelta(hours=await self._followup_hours())
         now = dt.datetime.now(dt.timezone.utc)

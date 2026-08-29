@@ -244,6 +244,79 @@ def test_real_incoming_is_answered_after_setup(tmp_path):
     asyncio.run(scenario())
 
 
+def test_wizard_custom_direction_and_typed_texts(tmp_path):
+    """Путь «Другое — напишу сам»: название, слова и тексты вводятся руками."""
+
+    async def scenario():
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
+            counter = iter(range(1, 500))
+
+            async def send(text: str) -> None:
+                await dp.feed_update(bot, message_update(text, next(counter)))
+
+            async def click(data: str) -> None:
+                await dp.feed_update(bot, callback_update(data, next(counter)))
+
+            await send("/start")
+            await click("wiz:start")
+            await send("cid")
+            await send("csecret")
+            await click("wiz:custom")
+            await send("Квартиры,Дача")
+            await send("квартиры, сдам")
+            await send("Здравствуйте! «{item_title}» свободна.")
+            await send("Напоминаю про «{item_title}».")
+            assert "Всё настроено" in session.last
+
+            niche = (await ctx.db.list_niches())[0]
+            assert niche["title"] == "Квартиры,Дача"
+            assert await ctx.db.primary_template(int(niche["id"]), "reply") is not None
+            assert await ctx.db.primary_template(int(niche["id"]), "followup") is not None
+
+            await send(kb.BTN_CHECK)
+            assert "Проверка пройдена" in session.last
+
+    asyncio.run(scenario())
+
+
+def test_check_explains_direction_without_text(tmp_path):
+    """Брошенное направление без текста: проверка объясняет причину, а не молчит."""
+
+    async def scenario():
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
+            counter = iter(range(1, 500))
+
+            async def send(text: str) -> None:
+                await dp.feed_update(bot, message_update(text, next(counter)))
+
+            async def click(data: str) -> None:
+                await dp.feed_update(bot, callback_update(data, next(counter)))
+
+            await send("/start")
+            await click("wiz:start")
+            await send("cid")
+            await send("csecret")
+            await click("wiz:custom")
+            await send("Квартиры,Дача")
+            await send("квартиры, сдам")
+            await send("Здравствуйте! «{item_title}» свободна.")
+            await click("wiz:skip:followup")
+
+            # Брошенный мастер: направление со словами, но без текста ответа.
+            await ctx.db.add_niche("broshennoe", "Брошенное", "квартир, сда, дач")
+
+            await send(kb.BTN_CHECK)
+            assert "Проверка пройдена" in session.last
+            assert "Без текста ответа" in session.last
+            assert "Брошенное" in session.last
+
+            # И на экране «Ответы» оно помечено предупреждением.
+            await send(kb.BTN_ANSWERS)
+            assert "⚠️" in session.last
+
+    asyncio.run(scenario())
+
+
 def test_non_admin_is_ignored(tmp_path):
     async def scenario():
         async with bot_harness(tmp_path) as (bot, dp, session, _ctx):

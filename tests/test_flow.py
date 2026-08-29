@@ -193,3 +193,37 @@ def test_chat_without_matching_niche_uses_default(tmp_path):
             assert result.replies_queued == 1
 
     run(scenario())
+
+
+def test_direction_without_reply_does_not_steal_chat(tmp_path):
+    """Брошенное направление без текста не должно перехватывать обращение."""
+
+    async def scenario():
+        async with harness(tmp_path) as h:
+            # Слов больше, значит при подборе оно выигрывало бы у настроенного.
+            await h.db.add_niche("broshennoe", "Брошенное", "квартир, сда, длительно")
+            h.gateway.add_incoming("Сдам квартиру, 2-к, длительно", "Здравствуйте")
+
+            result = await h.poller.poll_once()
+            assert result.replies_queued == 1
+
+            assert (await h.sender.send_next()).status == "sent"
+            assert "свободна" in h.gateway.sent[0][1]
+
+    run(scenario())
+
+
+def test_default_direction_without_reply_is_not_used(tmp_path):
+    """Если у направления по умолчанию нет текста, бот молчит, а не падает."""
+
+    async def scenario():
+        async with harness(tmp_path) as h:
+            empty_id = await h.db.add_niche("pustoe", "Пустое", "")
+            await h.db.set_default_niche(empty_id)
+            h.gateway.add_incoming("Сдам гараж", "Здравствуйте")
+
+            result = await h.poller.poll_once()
+            assert result.chats_seen == 1
+            assert result.replies_queued == 0
+
+    run(scenario())

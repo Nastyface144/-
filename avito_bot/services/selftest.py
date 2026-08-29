@@ -54,14 +54,21 @@ async def _check_setup(db: Database, sender: Sender, report: Report) -> tuple[ob
     report.good(f"Аккаунт подключён: {account['title']}")
 
     niche = None
+    empty: list[str] = []
     for candidate in await db.list_niches(only_active=True):
-        if await db.primary_template(int(candidate["id"]), "reply") is not None:
+        if await db.primary_template(int(candidate["id"]), "reply") is None:
+            empty.append(str(candidate["title"]))
+        elif niche is None:
             niche = candidate
-            break
     if niche is None:
         report.bad("Нет ни одного направления с текстом ответа — раздел «Ответы».")
         return account, None
     report.good(f"Направление настроено: {niche['title']}")
+    if empty:
+        report.note(
+            "Без текста ответа (бот их не использует): " + ", ".join(empty)
+            + ". Допишите текст или удалите — раздел «Ответы»."
+        )
 
     limit = await sender.daily_limit()
     sent = await db.sent_today(int(account["id"]))
@@ -118,6 +125,23 @@ async def run_self_test(
             report.good("Бот распознал обращение и подготовил ответ")
         else:
             report.bad("Бот не подготовил ответ на обращение")
+            if result.error:
+                report.note(f"Причина: {result.error}")
+            else:
+                matched = tpl.match_niche(await db.list_niches(), item_title)
+                if matched is None:
+                    report.note(
+                        "Тестовое объявление не подошло ни под одно направление. "
+                        "Проверьте слова в разделе «Ответы»."
+                    )
+                elif int(matched["id"]) != int(niche["id"]):
+                    report.note(
+                        f"Объявление подошло под другое направление — "
+                        f"«{matched['title']}». Уточните слова, чтобы направления "
+                        f"не пересекались."
+                    )
+                else:
+                    report.note("У направления нет текста ответа — раздел «Ответы».")
             return report.render()
 
         outcome = await sender.send_next()

@@ -286,11 +286,20 @@ async def show_directions(target: Message, ctx: AppContext) -> None:
         )
         return
     lines = ["<b>Ваши ответы</b>", ""]
+    incomplete = False
     for niche in niches:
         state = "" if niche["is_active"] else " (выключено)"
         words = niche["keywords"] or "любые объявления"
-        lines.append(f"• <b>{esc(niche['title'])}</b>{state} — {esc(words)}")
+        has_reply = await ctx.db.primary_template(int(niche["id"]), "reply") is not None
+        mark = "" if has_reply else " ⚠️"
+        incomplete = incomplete or not has_reply
+        lines.append(f"• <b>{esc(niche['title'])}</b>{state}{mark} — {esc(words)}")
     lines += ["", "Нажмите на направление, чтобы посмотреть и изменить тексты."]
+    if incomplete:
+        lines.append(
+            "\n⚠️ — нет текста ответа. Такое направление бот не использует: "
+            "допишите текст или удалите его."
+        )
     await target.answer("\n".join(lines), reply_markup=kb.directions_kb(niches))
 
 
@@ -312,7 +321,9 @@ async def show_direction(target: Message, ctx: AppContext, niche_id: int) -> Non
         f"<b>{esc(words)}</b>",
         "",
         "<b>Первый ответ:</b>",
-        f"<blockquote>{esc(reply['body'])}</blockquote>" if reply else "не задан",
+        f"<blockquote>{esc(reply['body'])}</blockquote>"
+        if reply
+        else "⚠️ не задан — без него направление не работает",
         "",
         f"<b>Напоминание через {hours} ч:</b>",
         f"<blockquote>{esc(followup['body'])}</blockquote>" if followup else "не настроено",
