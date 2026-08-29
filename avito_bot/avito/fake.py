@@ -56,11 +56,15 @@ class FakeAvitoGateway:
     # ---------------- управление симуляцией ----------------
 
     def add_incoming(
-        self, item_title: str, text: str, interlocutor: str = "Тестовый клиент"
+        self,
+        item_title: str,
+        text: str,
+        interlocutor: str = "Тестовый клиент",
+        prefix: str = "demo-chat",
     ) -> str:
         st = _state(self.account_id)
         num = next(st.counter)
-        chat_id = f"demo-chat-{num}"
+        chat_id = f"{prefix}-{num}"
         chat = _FakeChat(
             id=chat_id,
             item_id=f"demo-item-{num}",
@@ -79,6 +83,9 @@ class FakeAvitoGateway:
         )
         st.chats[chat_id] = chat
         return chat_id
+
+    def remove_chat(self, chat_id: str) -> None:
+        _state(self.account_id).chats.pop(chat_id, None)
 
     def age_chat(self, chat_id: str, hours: float) -> None:
         """Сдвигает время сообщений в прошлое — для проверки follow-up."""

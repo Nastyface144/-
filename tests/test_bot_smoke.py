@@ -138,7 +138,7 @@ async def bot_harness(tmp_path: Path):
         await bot.session.close()
 
 
-def test_full_flow_through_dispatcher(tmp_path):
+def test_wizard_and_menus_through_dispatcher(tmp_path):
     async def scenario():
         async with bot_harness(tmp_path) as (bot, dp, session, ctx):
             counter = iter(range(1, 500))
@@ -149,62 +149,97 @@ def test_full_flow_through_dispatcher(tmp_path):
             async def click(data: str) -> None:
                 await dp.feed_update(bot, callback_update(data, next(counter)))
 
-            # 1. Старт
+            # 1. Первый запуск — приглашение к мастеру, а не меню.
             await send("/start")
-            assert "Бот сообщений Авито" in session.last
+            assert "Настройка займёт пару минут" in session.last
+            assert not await ctx.db.is_configured()
 
-            # 2. Заводим аккаунт через диалог
-            await click("acc:add")
-            await send("Основной")
+            # 2. Шаг 1: подключение Авито.
+            await click("wiz:start")
+            assert "Шаг 1 из 3" in session.last
             await send("test-client-id")
             await send("test-client-secret")
             accounts = await ctx.db.list_accounts()
             assert len(accounts) == 1 and accounts[0]["is_active"] == 1
-            assert accounts[0]["client_secret"] != "test-client-secret"  # хранится не в открытом виде
+            assert accounts[0]["client_secret"] != "test-client-secret"
+            assert "Шаг 2 из 3" in session.last
 
-            # 3. Ниша
-            await click("niche:add")
-            await send("Квартиры · сдача · длительно")
-            await send("квартир, сда")
+            # 3. Шаг 2: готовое направление.
+            await click("wiz:preset:kv")
             niches = await ctx.db.list_niches()
             assert len(niches) == 1
+            assert "Шаг 3 из 3" in session.last
 
-            # 4. Клише
+            # 4. Шаг 3: тексты из примера.
+            await click("wiz:example:reply")
+            assert "не ответил в течение суток" in session.last
+            await click("wiz:example:followup")
+            assert "Всё настроено" in session.last
+            assert await ctx.db.is_configured()
+
+            # 5. Самопроверка проходит целиком.
+            await send(kb.BTN_CHECK)
+            assert "Проверка пройдена" in session.last
+            assert "Напоминание для молчунов тоже работает" in session.last
+
+            # 6. Следы самопроверки не попадают в отчёт клиенту.
+            account_id = int((await ctx.db.get_active_account())["id"])
+            assert await ctx.db.sent_today(account_id) == 0
+            await send(kb.BTN_REPORT)
+            assert "Сегодня отправлено: <b>0</b> из 50" in session.last
+
+            # 7. Экран ответов и правка текста.
+            await send(kb.BTN_ANSWERS)
+            assert "Ваши ответы" in session.last
             niche_id = int(niches[0]["id"])
-            await click(f"tpl:add:{niche_id}:reply")
-            await send("Здравствуйте! «{item_title}» свободна, когда удобно посмотреть?")
-            await click(f"tpl:add:{niche_id}:followup")
-            await send("Напоминаю про «{item_title}».")
-            assert len(await ctx.db.list_templates(niche_id)) == 2
+            await click(f"dir:open:{niche_id}")
+            assert "Первый ответ" in session.last
+            await click(f"dir:edit:{niche_id}:reply")
+            await send("Новый текст ответа по «{item_title}»")
+            reply = await ctx.db.primary_template(niche_id, "reply")
+            assert reply["body"].startswith("Новый текст ответа")
 
-            # 5. Лимит на сутки меняется из бота
+            # 8. Лимит меняется из настроек.
+            await send(kb.BTN_SETTINGS)
+            assert "Сообщений в день" in session.last
             await click("set:num:daily_limit")
-            await send("50")
-            assert await ctx.db.get_int_setting("daily_limit", 0) == 50
+            await send("30")
+            assert await ctx.db.get_int_setting("daily_limit", 0) == 30
 
-            # 6. Демо: входящее -> опрос -> отправка
-            await send(kb.BTN_DEMO)
-            await click("demo:new")
-            await send("Сдам квартиру, 2-к, длительно, от собственника")
-            await click("demo:poll")
-            assert "Автоответов в очередь: 1" in session.last
-            await click("demo:send")
-            assert "Отправлено" in session.last
+    asyncio.run(scenario())
 
-            gateway = ctx.pool.get(await ctx.db.get_active_account())
-            assert len(gateway.sent) == 1
+
+def test_real_incoming_is_answered_after_setup(tmp_path):
+    """После мастера бот сам отвечает на обращение — без кнопок «Демо»."""
+
+    async def scenario():
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
+            counter = iter(range(1, 500))
+
+            async def send(text: str) -> None:
+                await dp.feed_update(bot, message_update(text, next(counter)))
+
+            async def click(data: str) -> None:
+                await dp.feed_update(bot, callback_update(data, next(counter)))
+
+            await send("/start")
+            await click("wiz:start")
+            await send("cid")
+            await send("csecret")
+            await click("wiz:preset:kv")
+            await click("wiz:example:reply")
+            await click("wiz:skip:followup")
+
+            account = await ctx.db.get_active_account()
+            gateway = ctx.pool.get(account)
+            gateway.add_incoming("Сдам квартиру, 2-к, длительно", "Ещё актуально?")
+
+            assert (await ctx.poller.poll_once()).replies_queued == 1
+            assert (await ctx.sender.send_next()).status == "sent"
             assert "Сдам квартиру" in gateway.sent[0][1]
 
-            # 7. Статистика показывает факт отправки
-            await send(kb.BTN_STATS)
-            assert "Отправлено сегодня: <b>1</b> из 50" in session.last
-
-            # 8. Follow-up после молчания
-            await click("demo:age")
-            await click("demo:poll")
-            assert "Follow-up в очередь: 1" in session.last
-            await click("demo:send")
-            assert len(gateway.sent) == 2
+            await send(kb.BTN_REPORT)
+            assert "Сегодня отправлено: <b>1</b> из 50" in session.last
 
     asyncio.run(scenario())
 

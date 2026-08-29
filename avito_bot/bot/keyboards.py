@@ -1,4 +1,4 @@
-"""Клавиатуры бота."""
+"""Клавиатуры бота. Формулировки — обычным языком, без внутренних терминов."""
 
 from __future__ import annotations
 
@@ -11,24 +11,147 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-BTN_ACCOUNTS = "👤 Аккаунты"
-BTN_NICHES = "🎯 Ниши"
-BTN_TEMPLATES = "💬 Клише"
-BTN_STATS = "📊 Статистика"
+BTN_ANSWERS = "✏️ Ответы"
+BTN_REPORT = "📊 Отчёт"
+BTN_CHECK = "🩺 Проверка"
 BTN_SETTINGS = "⚙️ Настройки"
-BTN_QUEUE = "📮 Очередь"
-BTN_DEMO = "🧪 Демо"
+BTN_HELP = "❓ Помощь"
+
+# Готовые направления, чтобы не заставлять клиента придумывать ключевые слова.
+PRESETS = [
+    ("kv", "Квартиры в аренду", "квартир, сда"),
+    ("room", "Комнаты в аренду", "комнат, сда"),
+    ("house", "Дома в аренду", "дом, сда"),
+]
 
 
-def main_menu(dry_run: bool) -> ReplyKeyboardMarkup:
+def main_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_ANSWERS), KeyboardButton(text=BTN_REPORT)],
+            [KeyboardButton(text=BTN_CHECK), KeyboardButton(text=BTN_SETTINGS)],
+            [KeyboardButton(text=BTN_HELP)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def start_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Настроить за 3 шага", callback_data="wiz:start")]
+        ]
+    )
+
+
+def wizard_avito_kb(demo_allowed: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if demo_allowed:
+        rows.append(
+            [InlineKeyboardButton(text="Пропустить — сначала посмотрю", callback_data="wiz:demo")]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def presets_kb() -> InlineKeyboardMarkup:
     rows = [
-        [KeyboardButton(text=BTN_ACCOUNTS), KeyboardButton(text=BTN_NICHES)],
-        [KeyboardButton(text=BTN_TEMPLATES), KeyboardButton(text=BTN_QUEUE)],
-        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_SETTINGS)],
+        [InlineKeyboardButton(text=title, callback_data=f"wiz:preset:{slug}")]
+        for slug, title, _ in PRESETS
     ]
-    if dry_run:
-        rows.append([KeyboardButton(text=BTN_DEMO)])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+    rows.append([InlineKeyboardButton(text="Другое — напишу сам", callback_data="wiz:custom")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def example_kb(callback: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Взять пример", callback_data=callback)]]
+    )
+
+
+def followup_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Взять пример", callback_data="wiz:example:followup")],
+            [InlineKeyboardButton(text="Не нужно напоминание", callback_data="wiz:skip:followup")],
+        ]
+    )
+
+
+def directions_kb(niches: Sequence) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for niche in niches:
+        mark = "" if niche["is_active"] else "⏸ "
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{mark}{niche['title']}", callback_data=f"dir:open:{niche['id']}"
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="➕ Добавить направление", callback_data="dir:add")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def direction_kb(niche_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    toggle = "▶️ Включить" if not is_active else "⏸ Выключить"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✏️ Первый ответ", callback_data=f"dir:edit:{niche_id}:reply"
+                ),
+                InlineKeyboardButton(
+                    text="✏️ Напоминание", callback_data=f"dir:edit:{niche_id}:followup"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔤 Слова", callback_data=f"dir:edit:{niche_id}:keywords"
+                ),
+                InlineKeyboardButton(
+                    text="🏷 Название", callback_data=f"dir:edit:{niche_id}:title"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text=toggle, callback_data=f"dir:toggle:{niche_id}"),
+                InlineKeyboardButton(text="🗑 Удалить", callback_data=f"dir:del:{niche_id}"),
+            ],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="dir:list")],
+        ]
+    )
+
+
+def confirm_delete_kb(niche_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Да, удалить", callback_data=f"dir:delyes:{niche_id}"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"dir:open:{niche_id}"),
+            ]
+        ]
+    )
+
+
+def settings_kb(paused: bool) -> InlineKeyboardMarkup:
+    toggle = "▶️ Включить отправку" if paused else "⏸ Остановить отправку"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=toggle, callback_data="set:pause")],
+            [InlineKeyboardButton(text="🔌 Аккаунт Авито", callback_data="acc:list")],
+            [
+                InlineKeyboardButton(
+                    text="📈 Сколько сообщений в день", callback_data="set:num:daily_limit"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏰ Когда напоминать", callback_data="set:num:followup_after_hours"
+                )
+            ],
+        ]
+    )
 
 
 def accounts_kb(accounts: Sequence) -> InlineKeyboardMarkup:
@@ -40,99 +163,9 @@ def accounts_kb(accounts: Sequence) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=f"{mark}{acc['title']}", callback_data=f"acc:use:{acc['id']}"
                 ),
-                InlineKeyboardButton(text="🔌 Проверить", callback_data=f"acc:check:{acc['id']}"),
                 InlineKeyboardButton(text="🗑", callback_data=f"acc:del:{acc['id']}"),
             ]
         )
-    rows.append([InlineKeyboardButton(text="➕ Добавить аккаунт", callback_data="acc:add")])
+    rows.append([InlineKeyboardButton(text="➕ Подключить аккаунт", callback_data="acc:add")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="set:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def niches_kb(niches: Sequence) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for niche in niches:
-        flags = "✅" if niche["is_active"] else "⛔️"
-        if niche["is_default"]:
-            flags += "⭐️"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{flags} {niche['title']}", callback_data=f"niche:show:{niche['id']}"
-                ),
-                InlineKeyboardButton(text="⭐️", callback_data=f"niche:def:{niche['id']}"),
-                InlineKeyboardButton(text="↔️", callback_data=f"niche:toggle:{niche['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"niche:del:{niche['id']}"),
-            ]
-        )
-    rows.append([InlineKeyboardButton(text="➕ Добавить нишу", callback_data="niche:add")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def niche_pick_kb(niches: Sequence, action: str) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text=niche["title"], callback_data=f"{action}:{niche['id']}")]
-        for niche in niches
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=rows or [[InlineKeyboardButton(
-        text="Сначала добавьте нишу", callback_data="niche:add"
-    )]])
-
-
-def templates_kb(niche_id: int, templates: Sequence) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for tpl in templates:
-        label = "↩️" if tpl["kind"] == "reply" else "⏰"
-        preview = tpl["body"][:28].replace("\n", " ")
-        rows.append(
-            [
-                InlineKeyboardButton(text=f"{label} {preview}…", callback_data="noop"),
-                InlineKeyboardButton(text="🗑", callback_data=f"tpl:del:{tpl['id']}"),
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(text="➕ Автоответ", callback_data=f"tpl:add:{niche_id}:reply"),
-            InlineKeyboardButton(
-                text="➕ Follow-up", callback_data=f"tpl:add:{niche_id}:followup"
-            ),
-        ]
-    )
-    rows.append([InlineKeyboardButton(text="⬅️ К нишам", callback_data="tpl:back")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def settings_kb(paused: bool) -> InlineKeyboardMarkup:
-    toggle = "▶️ Возобновить отправку" if paused else "⏸ Поставить на паузу"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=toggle, callback_data="set:pause")],
-            [InlineKeyboardButton(text="Лимит в сутки", callback_data="set:num:daily_limit")],
-            [
-                InlineKeyboardButton(
-                    text="Пауза между сообщениями", callback_data="set:num:send_interval_seconds"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Период опроса чатов", callback_data="set:num:poll_interval_seconds"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Через сколько часов follow-up",
-                    callback_data="set:num:followup_after_hours",
-                )
-            ],
-        ]
-    )
-
-
-def demo_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📨 Новое входящее", callback_data="demo:new")],
-            [InlineKeyboardButton(text="🔄 Опросить чаты сейчас", callback_data="demo:poll")],
-            [InlineKeyboardButton(text="📤 Отправить из очереди", callback_data="demo:send")],
-            [InlineKeyboardButton(text="⏩ Состарить чаты на 48ч", callback_data="demo:age")],
-        ]
-    )

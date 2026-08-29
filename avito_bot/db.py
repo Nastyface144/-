@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import aiosqlite
 
@@ -203,6 +203,14 @@ class Database:
         await self._exec("UPDATE niches SET is_default=0", ())
         await self._exec("UPDATE niches SET is_default=1 WHERE id=?", (niche_id,))
 
+    async def update_niche(
+        self, niche_id: int, *, title: str | None = None, keywords: str | None = None
+    ) -> None:
+        if title is not None:
+            await self._exec("UPDATE niches SET title=? WHERE id=?", (title, niche_id))
+        if keywords is not None:
+            await self._exec("UPDATE niches SET keywords=? WHERE id=?", (keywords, niche_id))
+
     async def toggle_niche(self, niche_id: int) -> None:
         await self._exec(
             "UPDATE niches SET is_active = CASE is_active WHEN 1 THEN 0 ELSE 1 END WHERE id=?",
@@ -238,6 +246,24 @@ class Database:
 
     async def get_template(self, template_id: int) -> aiosqlite.Row | None:
         return await self.fetch_one("SELECT * FROM templates WHERE id=?", (template_id,))
+
+    async def primary_template(self, niche_id: int, kind: str) -> aiosqlite.Row | None:
+        """Основное клише направления — то, которое показываем и правим в боте."""
+        return await self.fetch_one(
+            "SELECT * FROM templates WHERE niche_id=? AND kind=? AND is_active=1"
+            " ORDER BY id LIMIT 1",
+            (niche_id, kind),
+        )
+
+    async def set_template_body(self, niche_id: int, kind: str, body: str) -> None:
+        """Заменяет текст ответа; если его ещё не было — создаёт."""
+        existing = await self.primary_template(niche_id, kind)
+        if existing is None:
+            await self.add_template(niche_id, kind, body)
+        else:
+            await self._exec(
+                "UPDATE templates SET body=? WHERE id=?", (body, int(existing["id"]))
+            )
 
     async def delete_template(self, template_id: int) -> None:
         await self._exec("DELETE FROM templates WHERE id=?", (template_id,))
@@ -340,6 +366,13 @@ class Database:
         )
         return int(row["c"]) if row else 0
 
+    async def total_sent(self, account_id: int) -> int:
+        row = await self.fetch_one(
+            "SELECT COUNT(*) AS c FROM sends WHERE account_id=? AND status='sent'",
+            (account_id,),
+        )
+        return int(row["c"]) if row else 0
+
     async def queue_size(self, account_id: int) -> int:
         row = await self.fetch_one(
             "SELECT COUNT(*) AS c FROM sends WHERE account_id=? AND status='queued'",
@@ -359,6 +392,17 @@ class Database:
             (account_id,),
         )
         return int(row["c"]) if row else 0
+
+    async def forget_chat(self, account_id: int, avito_chat_id: str) -> None:
+        """Убирает следы служебного чата (самопроверки) из истории и статистики."""
+        await self._exec(
+            "DELETE FROM sends WHERE account_id=? AND avito_chat_id=?",
+            (account_id, avito_chat_id),
+        )
+        await self._exec(
+            "DELETE FROM chats WHERE account_id=? AND avito_chat_id=?",
+            (account_id, avito_chat_id),
+        )
 
     async def has_send(self, account_id: int, avito_chat_id: str, kind: str) -> bool:
         row = await self.fetch_one(
@@ -387,9 +431,12 @@ class Database:
         except (TypeError, ValueError):
             return default
 
-    async def seed_defaults(self, niches: Iterable[tuple[str, str, str]]) -> None:
-        """Создаёт стартовые ниши, если справочник пуст."""
-        if await self.fetch_one("SELECT 1 FROM niches LIMIT 1"):
-            return
-        for slug, title, keywords in niches:
-            await self.add_niche(slug, title, keywords)
+    async def is_configured(self) -> bool:
+        """Настроен ли бот: есть аккаунт и хотя бы одно направление с ответом."""
+        if await self.get_active_account() is None:
+            return False
+        row = await self.fetch_one(
+            "SELECT 1 FROM templates t JOIN niches n ON n.id = t.niche_id"
+            " WHERE t.kind='reply' AND t.is_active=1 AND n.is_active=1 LIMIT 1"
+        )
+        return row is not None

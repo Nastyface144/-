@@ -22,39 +22,6 @@ from .services.sender import Sender
 
 log = logging.getLogger("avito_bot")
 
-DEFAULT_NICHES = [
-    (
-        "kvartiry-sdacha-dlitelno-sobstvenniki",
-        "Квартиры · сдача · длительно · собственники",
-        "квартир, сда",
-    ),
-]
-
-DEFAULT_TEMPLATES = [
-    (
-        "reply",
-        "Здравствуйте! Спасибо за обращение по объявлению «{item_title}».\n"
-        "Квартира свободна. Подскажите, на какой срок планируете и когда удобно посмотреть?",
-    ),
-    (
-        "followup",
-        "Здравствуйте! Напоминаю про «{item_title}» — вариант ещё актуален.\n"
-        "Если интересно, подберу время для просмотра.",
-    ),
-]
-
-
-async def seed(db: Database) -> None:
-    """Стартовое наполнение справочников — только если база пустая."""
-    if await db.list_niches():
-        return
-    for slug, title, keywords in DEFAULT_NICHES:
-        niche_id = await db.add_niche(slug, title, keywords)
-        for kind, body in DEFAULT_TEMPLATES:
-            await db.add_template(niche_id, kind, body)
-    log.info("Созданы стартовая ниша и клише")
-
-
 async def run() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -70,7 +37,6 @@ async def run() -> None:
 
     db = Database(settings.db_path)
     await db.connect()
-    await seed(db)
 
     box = SecretBox(settings.secret_key)
     pool = GatewayPool(settings, box)
@@ -161,13 +127,12 @@ async def check() -> int:
     db = Database(settings.db_path)
     try:
         await db.connect()
-        await seed(db)
         accounts = await db.list_accounts()
         niches = await db.list_niches()
         print(f"  Файл: {settings.db_path}")
-        print(f"  Аккаунтов Авито: {len(accounts)}, ниш: {len(niches)}")
+        print(f"  Аккаунтов Авито: {len(accounts)}, направлений: {len(niches)}")
         if not accounts:
-            print("  Аккаунт добавляется в самом боте: /start → «👤 Аккаунты».")
+            print("  Аккаунт подключается в самом боте: команда /start.")
         elif not settings.dry_run:
             active = await db.get_active_account()
             if active is not None:
