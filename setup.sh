@@ -25,7 +25,8 @@ echo "Использую $PY ($("$PY" --version))"
 say "2/5 Ставлю зависимости"
 [ -d .venv ] || "$PY" -m venv .venv
 ./.venv/bin/pip install --quiet --upgrade pip
-./.venv/bin/pip install --quiet -r requirements.txt
+# Без --quiet: видно, что установка идёт, а не зависла.
+./.venv/bin/pip install -r requirements.txt
 echo "Готово."
 
 # ---- 3. Настройки ----------------------------------------------------------

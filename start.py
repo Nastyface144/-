@@ -66,12 +66,16 @@ def step_deps() -> None:
             run([sys.executable, "-m", "venv", str(VENV)])
         except subprocess.CalledProcessError:
             die("не удалось создать виртуальное окружение (.venv).")
-    pip = [str(venv_python()), "-m", "pip", "install", "--quiet"]
+    pip = [str(venv_python()), "-m", "pip", "install"]
     try:
-        run([*pip, "--upgrade", "pip"])
+        run([*pip, "--quiet", "--upgrade", "pip"])
+        # Без --quiet: видно, что установка идёт, а не зависла.
         run([*pip, "-r", str(ROOT / "requirements.txt")])
     except subprocess.CalledProcessError:
-        die("не удалось установить зависимости — проверьте интернет и запустите снова.")
+        die(
+            "не удалось установить зависимости.\n"
+            "Проверьте интернет, удалите папку .venv и запустите скрипт снова."
+        )
     print("Готово.")
 
 
