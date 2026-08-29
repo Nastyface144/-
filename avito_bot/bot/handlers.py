@@ -76,7 +76,7 @@ async def cmd_start(message: Message, ctx: AppContext, state: FSMContext) -> Non
     mode = (
         "\n\n<i>Сейчас включён режим проверки: бот работает на учебных данных, "
         "в Авито ничего не уходит.</i>"
-        if ctx.settings.dry_run
+        if ctx.pool.dry_run
         else ""
     )
     await message.answer(
@@ -120,7 +120,7 @@ async def wiz_start(call: CallbackQuery, ctx: AppContext, state: FSMContext) -> 
         "Он выдаётся в кабинете Авито: <b>Настройки → Доступ к API</b>. "
         "Там создаётся приложение, и Авито показывает два кода.\n\n"
         "Пришлите первый — <b>client_id</b>.",
-        reply_markup=kb.wizard_avito_kb(ctx.settings.dry_run),
+        reply_markup=kb.wizard_avito_kb(ctx.pool.dry_run),
     )
     await call.answer()
 
@@ -263,7 +263,7 @@ async def finish_wizard(
     note = (
         "\n\n<i>Сейчас включён режим проверки — в Авито ничего не уходит. "
         "Когда будете готовы, подключите настоящий аккаунт в «Настройках».</i>"
-        if ctx.settings.dry_run
+        if ctx.pool.dry_run
         else ""
     )
     await target.answer(
@@ -463,7 +463,7 @@ async def report(message: Message, ctx: AppContext, state: FSMContext) -> None:
     ]
     if failed:
         lines.append(f"Не удалось отправить: {failed}")
-    if ctx.settings.dry_run:
+    if ctx.pool.dry_run:
         lines.append("<i>Режим проверки: в Авито ничего не уходит.</i>")
 
     rows = [r for r in await ctx.db.recent_sends(account_id, limit=20) if r["status"] == "sent"]
@@ -484,7 +484,7 @@ async def report(message: Message, ctx: AppContext, state: FSMContext) -> None:
 async def check(message: Message, ctx: AppContext, state: FSMContext) -> None:
     await state.clear()
     waiting = await message.answer("Проверяю…")
-    text = await run_self_test(ctx.db, ctx.settings, ctx.poller, ctx.sender)
+    text = await run_self_test(ctx.db, ctx.poller, ctx.sender)
     try:
         await waiting.edit_text(text)
     except Exception:  # noqa: BLE001 — не вышло отредактировать, пришлём новым
@@ -507,10 +507,14 @@ async def show_settings(target: Message, ctx: AppContext) -> None:
         f"Сообщений в день: не больше {limit}",
         f"Напоминание: через {hours} ч молчания",
         "Отправка: " + ("⏸ на паузе" if paused else "▶️ работает"),
+        "Режим: " + ("🧪 проверка" if ctx.pool.dry_run else "🚀 боевой"),
     ]
-    if ctx.settings.dry_run:
-        lines += ["", "<i>Включён режим проверки: в Авито ничего не уходит.</i>"]
-    await target.answer("\n".join(lines), reply_markup=kb.settings_kb(paused))
+    if ctx.pool.dry_run:
+        lines += ["", "<i>В режиме проверки бот работает на учебных данных, "
+                  "в Авито ничего не уходит.</i>"]
+    await target.answer(
+        "\n".join(lines), reply_markup=kb.settings_kb(paused, ctx.pool.dry_run)
+    )
 
 
 async def settings_menu(message: Message, ctx: AppContext, state: FSMContext) -> None:
@@ -553,6 +557,66 @@ async def settings_number_value(message: Message, ctx: AppContext, state: FSMCon
     await ctx.db.set_setting(key, raw)
     await message.answer("Сохранил ✅")
     await show_settings(message, ctx)
+
+
+async def mode_ask(call: CallbackQuery, ctx: AppContext) -> None:
+    to_live = ctx.pool.dry_run
+    if to_live:
+        text = (
+            "<b>Перейти в боевой режим?</b>\n\n"
+            "Бот начнёт по-настоящему писать людям в чатах Авито — "
+            "не больше заданного лимита в день.\n\n"
+            "Нужен подключённый аккаунт Авито с настоящими кодами доступа. "
+            "Если их нет, бот вернётся к проверке и скажет об этом."
+        )
+    else:
+        text = (
+            "<b>Вернуться в режим проверки?</b>\n\n"
+            "Бот перестанет писать людям и продолжит работать на учебных данных. "
+            "Настройки и тексты сохранятся."
+        )
+    await call.message.answer(text, reply_markup=kb.mode_confirm_kb(to_live))
+    await call.answer()
+
+
+async def mode_set(call: CallbackQuery, ctx: AppContext) -> None:
+    to_live = call.data == "mode:live"
+    if not to_live:
+        await ctx.pool.set_dry_run(ctx.db, True)
+        await call.answer("Режим проверки включён")
+        await call.message.answer("🧪 Вернулись в режим проверки — в Авито ничего не уходит.")
+        await show_settings(call.message, ctx)
+        return
+
+    account = await ctx.db.get_active_account()
+    if account is None:
+        await call.answer()
+        await call.message.answer(
+            "Сначала подключите аккаунт Авито: «Настройки» → «🔌 Аккаунт Авито»."
+        )
+        return
+
+    await call.answer("Проверяю доступ к Авито…")
+    await ctx.pool.set_dry_run(ctx.db, False)
+    try:
+        user_id = await ctx.pool.get(account).get_self_id()
+    except Exception as exc:  # noqa: BLE001
+        await ctx.pool.set_dry_run(ctx.db, True)
+        await call.message.answer(
+            f"❌ Авито не принял коды доступа, остаёмся в режиме проверки.\n\n"
+            f"<code>{esc(exc)}</code>\n\n"
+            "Проверьте client_id и client_secret в «Настройки» → «🔌 Аккаунт Авито»."
+        )
+        await show_settings(call.message, ctx)
+        return
+
+    await ctx.db.set_account_user_id(int(account["id"]), user_id)
+    await call.message.answer(
+        "🚀 <b>Боевой режим включён.</b>\n\n"
+        "Бот отвечает на настоящие обращения по вашим объявлениям. "
+        "Остановить в любой момент — «Настройки» → «Остановить отправку»."
+    )
+    await show_settings(call.message, ctx)
 
 
 # ---------------------------------------------------------------- аккаунты Авито
@@ -687,6 +751,9 @@ def build_router() -> Router:
     on_call(dir_toggle, F.data.startswith("dir:toggle:"))
     on_call(dir_delete_ask, F.data.startswith("dir:del:"))
     on_call(dir_delete, F.data.startswith("dir:delyes:"))
+
+    on_call(mode_ask, F.data == "mode:ask")
+    on_call(mode_set, F.data.in_({"mode:live", "mode:test"}))
 
     on_call(settings_open, F.data == "set:open")
     on_call(settings_pause, F.data == "set:pause")

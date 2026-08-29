@@ -20,6 +20,7 @@ from aiogram.methods import AnswerCallbackQuery, DeleteMessage, SendMessage, Tel
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from avito_bot.avito import fake
+from avito_bot.avito.fake import FakeAvitoGateway
 from avito_bot.bot.context import AppContext
 from avito_bot.bot.handlers import build_router
 from avito_bot.bot import keyboards as kb
@@ -108,6 +109,8 @@ async def bot_harness(tmp_path: Path):
         dry_run=True,
         daily_limit=50,
         db_path=tmp_path / "smoke.sqlite3",
+        # Заведомо закрытый порт: боевой режим падает сразу, без похода в сеть.
+        avito_api_base="http://127.0.0.1:9",
     )
     db = Database(settings.db_path)
     await db.connect()
@@ -313,6 +316,50 @@ def test_check_explains_direction_without_text(tmp_path):
             # И на экране «Ответы» оно помечено предупреждением.
             await send(kb.BTN_ANSWERS)
             assert "⚠️" in session.last
+
+    asyncio.run(scenario())
+
+
+def test_mode_switch_falls_back_when_avito_rejects(tmp_path):
+    """Боевой режим включается из бота и сам откатывается, если Авито недоступен."""
+
+    async def scenario():
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
+            counter = iter(range(1, 500))
+
+            async def send(text: str) -> None:
+                await dp.feed_update(bot, message_update(text, next(counter)))
+
+            async def click(data: str) -> None:
+                await dp.feed_update(bot, callback_update(data, next(counter)))
+
+            # Без аккаунта переключение не проходит.
+            await click("mode:live")
+            assert "Сначала подключите аккаунт" in session.last
+            assert ctx.pool.dry_run
+
+            await send("/start")
+            await click("wiz:start")
+            await send("cid")
+            await send("csecret")
+            await click("wiz:preset:kv")
+            await click("wiz:example:reply")
+            await click("wiz:skip:followup")
+
+            # Коды нерабочие — бот остаётся в режиме проверки.
+            await click("mode:live")
+            # Сообщение об откате приходит перед экраном настроек.
+            assert any("остаёмся в режиме проверки" in msg for msg in session.sent)
+            assert ctx.pool.dry_run
+            assert await ctx.db.get_setting("dry_run", "") == "1"
+
+            # Клиент пула пересоздан под режим проверки.
+            account = await ctx.db.get_active_account()
+            assert isinstance(ctx.pool.get(account), FakeAvitoGateway)
+
+            # Самопроверка после этого по-прежнему проходит.
+            await send(kb.BTN_CHECK)
+            assert "Проверка пройдена" in session.last
 
     asyncio.run(scenario())
 

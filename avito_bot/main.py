@@ -40,6 +40,7 @@ async def run() -> None:
 
     box = SecretBox(settings.secret_key)
     pool = GatewayPool(settings, box)
+    await pool.load_mode(db)
 
     bot = Bot(
         token=settings.bot_token,
@@ -68,7 +69,7 @@ async def run() -> None:
     ]
     log.info(
         "Старт: режим %s, лимит %s/сутки",
-        "DRY-RUN" if settings.dry_run else "боевой",
+        "проверка" if pool.dry_run else "боевой",
         settings.daily_limit,
     )
     try:
@@ -102,7 +103,7 @@ async def check() -> int:
         print("  SECRET_KEY: не задан — секреты Авито будут храниться в открытом виде")
     else:
         print("  SECRET_KEY: задан")
-    print(f"  Режим: {'DRY-RUN, в Авито ничего не уходит' if settings.dry_run else 'боевой'}")
+    dry_run = settings.dry_run
     print(f"  Лимит: {settings.daily_limit} сообщений в сутки")
 
     if problems:
@@ -127,16 +128,21 @@ async def check() -> int:
     db = Database(settings.db_path)
     try:
         await db.connect()
+        stored = await db.get_setting("dry_run", "")
+        if stored in {"0", "1"}:
+            dry_run = stored == "1"
+        print("  Режим: " + ("проверка, в Авито ничего не уходит" if dry_run else "боевой"))
         accounts = await db.list_accounts()
         niches = await db.list_niches()
         print(f"  Файл: {settings.db_path}")
         print(f"  Аккаунтов Авито: {len(accounts)}, направлений: {len(niches)}")
         if not accounts:
             print("  Аккаунт подключается в самом боте: команда /start.")
-        elif not settings.dry_run:
+        elif not dry_run:
             active = await db.get_active_account()
             if active is not None:
                 pool = GatewayPool(settings, SecretBox(settings.secret_key))
+                await pool.load_mode(db)
                 try:
                     user_id = await pool.get(active).get_self_id()
                     print(f"  Авито отвечает, user_id: {user_id}")

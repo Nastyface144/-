@@ -134,10 +134,14 @@ def confirm_delete_kb(niche_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def settings_kb(paused: bool) -> InlineKeyboardMarkup:
+def settings_kb(paused: bool, dry_run: bool) -> InlineKeyboardMarkup:
     toggle = "▶️ Включить отправку" if paused else "⏸ Остановить отправку"
+    mode = (
+        "🚀 Перейти в боевой режим" if dry_run else "🧪 Вернуться в режим проверки"
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text=mode, callback_data="mode:ask")],
             [InlineKeyboardButton(text=toggle, callback_data="set:pause")],
             [InlineKeyboardButton(text="🔌 Аккаунт Авито", callback_data="acc:list")],
             [
@@ -169,3 +173,18 @@ def accounts_kb(accounts: Sequence) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(text="➕ Подключить аккаунт", callback_data="acc:add")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="set:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def mode_confirm_kb(to_live: bool) -> InlineKeyboardMarkup:
+    if to_live:
+        yes = "Да, включить боевой режим"
+        data = "mode:live"
+    else:
+        yes = "Да, вернуться к проверке"
+        data = "mode:test"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=yes, callback_data=data)],
+            [InlineKeyboardButton(text="Отмена", callback_data="set:open")],
+        ]
+    )

@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..avito.fake import FakeAvitoGateway
-from ..config import Settings
 from ..db import Database
 from ..services import templates as tpl
 from .poller import Poller
@@ -84,15 +83,13 @@ async def _check_setup(db: Database, sender: Sender, report: Report) -> tuple[ob
     return account, niche
 
 
-async def run_self_test(
-    db: Database, settings: Settings, poller: Poller, sender: Sender
-) -> str:
+async def run_self_test(db: Database, poller: Poller, sender: Sender) -> str:
     report = Report()
     account, niche = await _check_setup(db, sender, report)
     if account is None or niche is None:
         return report.render()
 
-    if not settings.dry_run:
+    if not poller.pool.dry_run:
         gateway = poller.pool.get(account)
         try:
             user_id = await gateway.get_self_id()
