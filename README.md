@@ -35,20 +35,49 @@ Telegram-бот, который отвечает заранее заготовл
 ## Быстрый старт (проверка работоспособности)
 
 Ключи Авито не нужны — проверка идёт в режиме `DRY_RUN=1` на встроенном симуляторе.
+Нужен только токен бота от [@BotFather](https://t.me/BotFather) (команда `/newbot`)
+и ваш Telegram ID от [@userinfobot](https://t.me/userinfobot).
 
-**Вариант 1: одной командой** (Linux / macOS)
+### Шаг 1. Установить Python и Git
+
+- **Windows:** [python.org/downloads](https://www.python.org/downloads/) — при установке
+  обязательно поставьте галочку **«Add python.exe to PATH»**.
+  Затем [git-scm.com/download/win](https://git-scm.com/download/win) (всё по умолчанию).
+- **macOS:** установите [Homebrew](https://brew.sh), затем в Терминале:
+  `brew install python git`
+- **Linux (Ubuntu/Debian):** `sudo apt install python3 python3-venv git`
+
+### Шаг 2. Открыть терминал
+
+- **Windows:** `Win + R` → напечатать `powershell` → Enter.
+- **macOS:** `Cmd + Space` → напечатать `Терминал` → Enter.
+- **Linux:** `Ctrl + Alt + T`.
+
+### Шаг 3. Выполнить команды
+
+Копируйте построчно, после каждой — Enter:
 
 ```bash
 git clone https://github.com/Nastyface144/-.git avito-bot
-cd avito-bot && git checkout claude/peaceful-wozniak-jbwywm
-./setup.sh
+cd avito-bot
+git checkout claude/peaceful-wozniak-jbwywm
+python start.py
 ```
 
-Скрипт сам поставит зависимости, спросит `BOT_TOKEN` (у [@BotFather](https://t.me/BotFather),
-команда `/newbot`) и ваш Telegram ID (у [@userinfobot](https://t.me/userinfobot)),
-сгенерирует `SECRET_KEY`, проверит связь с Telegram и запустит бота.
+На Windows, если `python` не находится, используйте `py start.py`;
+на macOS и Linux — `python3 start.py`.
 
-**Вариант 2: руками**
+`start.py` сам поставит зависимости, спросит токен и ваш ID, сгенерирует
+`SECRET_KEY`, проверит связь с Telegram и запустит бота. Больше ничего вводить
+не нужно. Повторный запуск — та же команда `python start.py` из папки `avito-bot`
+(вернуться в неё: `cd avito-bot`).
+
+### Что дальше
+
+Бот работает, пока открыто окно терминала. Закрыли — бот выключился,
+запустить снова той же командой. Для круглосуточной работы см. «Боевой режим».
+
+### Ручная установка
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -104,7 +133,7 @@ pytest -q
 ## Безопасность
 
 - `BOT_TOKEN` и ключи Авито живут только в `.env` на вашей машине
-  (`.env` в `.gitignore`, `setup.sh` ставит на файл права `600`).
+  (`.env` в `.gitignore`, `start.py` ограничивает права на файл).
   Не пересылайте их в переписке — токен даёт полный доступ к боту.
   Если токен всё же засветился, в @BotFather команда `/revoke` выдаст новый.
 - `SECRET_KEY` шифрует `client_secret` аккаунтов в базе. Потеряете ключ —
@@ -148,6 +177,7 @@ avito_bot/
     gateways.py        выбор клиента (реальный/симулятор) и его кэш
   bot/                 хендлеры, клавиатуры, состояния диалогов
   main.py              запуск бота и двух фоновых задач
+start.py               установка и запуск одной командой
 ```
 
 Версии эндпоинтов мессенджера собраны в константах вверху
