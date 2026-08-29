@@ -12,7 +12,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from .bot.context import AppContext
-from .bot.handlers import build_router
+from .bot.handlers import build_guest_router, build_router
 from .config import Settings
 from .crypto import SecretBox
 from .db import Database
@@ -61,6 +61,7 @@ async def run() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     dp["ctx"] = ctx
     dp.include_router(build_router())
+    dp.include_router(build_guest_router())
 
     stop = asyncio.Event()
     tasks = [

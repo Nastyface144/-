@@ -35,3 +35,7 @@ class AddAccount(StatesGroup):
 
 class EditNumber(StatesGroup):
     value = State()
+
+
+class AddAccess(StatesGroup):
+    user_id = State()

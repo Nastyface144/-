@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 from ..services.selftest import run_self_test
 from . import keyboards as kb
 from .context import AppContext
-from .states import AddAccount, AddDirection, EditField, EditNumber, Wizard
+from .states import AddAccess, AddAccount, AddDirection, EditField, EditNumber, Wizard
 
 SLUG_RE = re.compile(r"[^a-z0-9а-яё]+")
 
@@ -55,10 +55,12 @@ def slugify(title: str) -> str:
     return SLUG_RE.sub("-", title.lower()).strip("-")[:64] or "napravlenie"
 
 
-class AdminFilter(BaseFilter):
+class AccessFilter(BaseFilter):
+    """Пропускает владельцев из .env и тех, кому доступ выдали из бота."""
+
     async def __call__(self, event: TelegramObject, ctx: AppContext) -> bool:
         user = getattr(event, "from_user", None)
-        return bool(user and ctx.settings.is_admin(user.id))
+        return bool(user and await ctx.has_access(user.id))
 
 
 # ---------------------------------------------------------------- старт и справка
@@ -493,7 +495,7 @@ async def check(message: Message, ctx: AppContext, state: FSMContext) -> None:
 
 # ---------------------------------------------------------------- настройки
 
-async def show_settings(target: Message, ctx: AppContext) -> None:
+async def show_settings(target: Message, ctx: AppContext, is_owner: bool = False) -> None:
     account = await ctx.db.get_active_account()
     paused = await ctx.sender.is_paused()
     limit = await ctx.sender.daily_limit()
@@ -513,17 +515,17 @@ async def show_settings(target: Message, ctx: AppContext) -> None:
         lines += ["", "<i>В режиме проверки бот работает на учебных данных, "
                   "в Авито ничего не уходит.</i>"]
     await target.answer(
-        "\n".join(lines), reply_markup=kb.settings_kb(paused, ctx.pool.dry_run)
+        "\n".join(lines), reply_markup=kb.settings_kb(paused, ctx.pool.dry_run, is_owner)
     )
 
 
 async def settings_menu(message: Message, ctx: AppContext, state: FSMContext) -> None:
     await state.clear()
-    await show_settings(message, ctx)
+    await show_settings(message, ctx, ctx.is_owner(message.from_user.id))
 
 
 async def settings_open(call: CallbackQuery, ctx: AppContext) -> None:
-    await show_settings(call.message, ctx)
+    await show_settings(call.message, ctx, ctx.is_owner(call.from_user.id))
     await call.answer()
 
 
@@ -619,6 +621,70 @@ async def mode_set(call: CallbackQuery, ctx: AppContext) -> None:
     await show_settings(call.message, ctx)
 
 
+# ---------------------------------------------------------------- доступ к боту
+
+async def show_access(target: Message, ctx: AppContext) -> None:
+    extra = await ctx.db.extra_admins()
+    lines = [
+        "<b>Доступ к боту</b>",
+        "",
+        "Владельцы (заданы при установке): "
+        + ", ".join(str(i) for i in sorted(ctx.settings.admin_ids)),
+    ]
+    if extra:
+        lines.append("Выдан доступ: " + ", ".join(str(i) for i in extra))
+    else:
+        lines.append("Больше доступ никому не выдан.")
+    lines += [
+        "",
+        "Чтобы пустить человека в бота, попросите его написать боту любое "
+        "сообщение — бот пришлёт ему его номер. Затем нажмите «➕ Дать доступ» "
+        "и отправьте этот номер.",
+    ]
+    await target.answer("\n".join(lines), reply_markup=kb.access_kb(extra))
+
+
+async def access_list(call: CallbackQuery, ctx: AppContext) -> None:
+    if not ctx.is_owner(call.from_user.id):
+        await call.answer("Доступом управляет владелец бота", show_alert=True)
+        return
+    await show_access(call.message, ctx)
+    await call.answer()
+
+
+async def access_add(call: CallbackQuery, ctx: AppContext, state: FSMContext) -> None:
+    if not ctx.is_owner(call.from_user.id):
+        await call.answer("Доступом управляет владелец бота", show_alert=True)
+        return
+    await state.set_state(AddAccess.user_id)
+    await call.message.answer("Пришлите номер человека — число, которое ему показал бот.")
+    await call.answer()
+
+
+async def access_add_value(message: Message, ctx: AppContext, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("Нужно число. Попробуйте ещё раз или отправьте /cancel.")
+        return
+    await state.clear()
+    await ctx.db.add_extra_admin(int(raw))
+    await message.answer(f"Готово — человек с номером {esc(raw)} теперь может пользоваться ботом.")
+    await show_access(message, ctx)
+
+
+async def access_delete(call: CallbackQuery, ctx: AppContext) -> None:
+    if not ctx.is_owner(call.from_user.id):
+        await call.answer("Доступом управляет владелец бота", show_alert=True)
+        return
+    await ctx.db.remove_extra_admin(int(call.data.split(":")[-1]))
+    await call.answer("Доступ забран")
+    await show_access(call.message, ctx)
+
+
+async def noop(call: CallbackQuery) -> None:
+    await call.answer()
+
+
 # ---------------------------------------------------------------- аккаунты Авито
 
 async def show_accounts(target: Message, ctx: AppContext) -> None:
@@ -702,8 +768,8 @@ def build_router() -> Router:
     заново — так бот и тесты не мешают друг другу.
     """
     router = Router(name="admin")
-    router.message.filter(AdminFilter())
-    router.callback_query.filter(AdminFilter())
+    router.message.filter(AccessFilter())
+    router.callback_query.filter(AccessFilter())
 
     on_message = router.message.register
     on_call = router.callback_query.register
@@ -735,6 +801,7 @@ def build_router() -> Router:
     on_message(settings_number_value, EditNumber.value)
     on_message(account_client_id, AddAccount.client_id)
     on_message(account_client_secret, AddAccount.client_secret)
+    on_message(access_add_value, AddAccess.user_id)
 
     on_call(wiz_start, F.data == "wiz:start")
     on_call(wiz_demo, F.data == "wiz:demo")
@@ -759,9 +826,32 @@ def build_router() -> Router:
     on_call(settings_pause, F.data == "set:pause")
     on_call(settings_number, F.data.startswith("set:num:"))
 
+    on_call(access_list, F.data == "acl:list")
+    on_call(access_add, F.data == "acl:add")
+    on_call(access_delete, F.data.startswith("acl:del:"))
+    on_call(noop, F.data == "noop")
+
     on_call(accounts_list, F.data == "acc:list")
     on_call(account_add, F.data == "acc:add")
     on_call(account_use, F.data.startswith("acc:use:"))
     on_call(account_delete, F.data.startswith("acc:del:"))
 
+    return router
+
+
+# ---------------------------------------------------------------- гости
+
+async def guest_hello(message: Message) -> None:
+    """Ответ тому, у кого нет доступа: молчание выглядит как поломка."""
+    await message.answer(
+        "Это приватный бот — им пользуется владелец объявлений.\n\n"
+        f"Ваш номер: <code>{message.from_user.id}</code>\n"
+        "Передайте его владельцу бота, чтобы он открыл вам доступ."
+    )
+
+
+def build_guest_router() -> Router:
+    """Подключается ПОСЛЕ основного роутера: сюда попадают только чужие."""
+    router = Router(name="guest")
+    router.message.register(guest_hello, F.text)
     return router

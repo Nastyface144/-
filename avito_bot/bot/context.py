@@ -20,3 +20,12 @@ class AppContext:
     pool: GatewayPool
     poller: Poller
     sender: Sender
+
+    def is_owner(self, user_id: int) -> bool:
+        """Владелец — тот, кто указан в ADMIN_IDS. Он раздаёт доступ остальным."""
+        return self.settings.is_admin(user_id)
+
+    async def has_access(self, user_id: int) -> bool:
+        if self.is_owner(user_id):
+            return True
+        return user_id in await self.db.extra_admins()

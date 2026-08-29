@@ -431,6 +431,28 @@ class Database:
         except (TypeError, ValueError):
             return default
 
+    # ---------------- доступ к боту ----------------
+
+    async def extra_admins(self) -> list[int]:
+        """Те, кому доступ выдали из бота (владельцы задаются в .env)."""
+        raw = await self.get_setting("extra_admins", "")
+        out: list[int] = []
+        for chunk in raw.split(","):
+            chunk = chunk.strip()
+            if chunk.isdigit():
+                out.append(int(chunk))
+        return out
+
+    async def add_extra_admin(self, user_id: int) -> None:
+        current = await self.extra_admins()
+        if user_id not in current:
+            current.append(user_id)
+            await self.set_setting("extra_admins", ",".join(str(i) for i in current))
+
+    async def remove_extra_admin(self, user_id: int) -> None:
+        current = [i for i in await self.extra_admins() if i != user_id]
+        await self.set_setting("extra_admins", ",".join(str(i) for i in current))
+
     async def is_configured(self) -> bool:
         """Настроен ли бот: есть аккаунт и хотя бы одно направление с ответом."""
         if await self.get_active_account() is None:

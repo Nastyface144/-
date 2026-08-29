@@ -22,7 +22,7 @@ from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from avito_bot.avito import fake
 from avito_bot.avito.fake import FakeAvitoGateway
 from avito_bot.bot.context import AppContext
-from avito_bot.bot.handlers import build_router
+from avito_bot.bot.handlers import build_guest_router, build_router
 from avito_bot.bot import keyboards as kb
 from avito_bot.config import Settings
 from avito_bot.crypto import SecretBox
@@ -133,6 +133,7 @@ async def bot_harness(tmp_path: Path):
     dp = Dispatcher(storage=MemoryStorage())
     dp["ctx"] = ctx
     dp.include_router(build_router())
+    dp.include_router(build_guest_router())
     try:
         yield bot, dp, session, ctx
     finally:
@@ -366,7 +367,7 @@ def test_mode_switch_falls_back_when_avito_rejects(tmp_path):
 
 def test_non_admin_is_ignored(tmp_path):
     async def scenario():
-        async with bot_harness(tmp_path) as (bot, dp, session, _ctx):
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
             stranger = User(id=999, is_bot=False, first_name="Чужой")
             update = Update(
                 update_id=1,
@@ -379,6 +380,84 @@ def test_non_admin_is_ignored(tmp_path):
                 ),
             )
             await dp.feed_update(bot, update)
-            assert session.sent == []
+            # Не молчим: человек должен понять, что делать дальше.
+            assert len(session.sent) == 1
+            assert "приватный бот" in session.last
+            assert "999" in session.last
+            assert not await ctx.db.is_configured()
+
+    asyncio.run(scenario())
+
+
+def test_owner_grants_access_from_the_bot(tmp_path):
+    """Владелец выдаёт доступ по номеру — и человек начинает пользоваться ботом."""
+
+    async def scenario():
+        async with bot_harness(tmp_path) as (bot, dp, session, ctx):
+            counter = iter(range(1, 500))
+            guest = User(id=999, is_bot=False, first_name="Заказчик")
+            guest_chat = Chat(id=999, type="private")
+
+            async def send(text: str) -> None:
+                await dp.feed_update(bot, message_update(text, next(counter)))
+
+            async def click(data: str) -> None:
+                await dp.feed_update(bot, callback_update(data, next(counter)))
+
+            async def guest_send(text: str) -> None:
+                await dp.feed_update(
+                    bot,
+                    Update(
+                        update_id=next(counter),
+                        message=Message(
+                            message_id=next(counter),
+                            date=dt.datetime.now(dt.timezone.utc),
+                            chat=guest_chat,
+                            from_user=guest,
+                            text=text,
+                        ),
+                    ),
+                )
+
+            # Пока доступа нет — бот подсказывает номер.
+            await guest_send("/start")
+            assert "Ваш номер" in session.last
+
+            # Владелец выдаёт доступ по этому номеру.
+            await send(kb.BTN_SETTINGS)
+            await click("acl:list")
+            assert "Доступ к боту" in session.last
+            await click("acl:add")
+            await send("999")
+            assert 999 in await ctx.db.extra_admins()
+
+            # Теперь бот работает для гостя как обычно.
+            await guest_send("/start")
+            assert "Настройка займёт пару минут" in session.last
+
+            # А управление доступом гостю недоступно.
+            await dp.feed_update(
+                bot,
+                Update(
+                    update_id=next(counter),
+                    callback_query=CallbackQuery(
+                        id=str(next(counter)),
+                        from_user=guest,
+                        chat_instance="ci",
+                        data="acl:add",
+                        message=Message(
+                            message_id=next(counter),
+                            date=dt.datetime.now(dt.timezone.utc),
+                            chat=guest_chat,
+                            text="menu",
+                        ),
+                    ),
+                ),
+            )
+            assert "Настройка займёт пару минут" in session.last  # экран не сменился
+
+            # И доступ можно забрать обратно.
+            await click("acl:del:999")
+            assert 999 not in await ctx.db.extra_admins()
 
     asyncio.run(scenario())

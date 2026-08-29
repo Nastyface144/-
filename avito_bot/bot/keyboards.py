@@ -134,7 +134,7 @@ def confirm_delete_kb(niche_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def settings_kb(paused: bool, dry_run: bool) -> InlineKeyboardMarkup:
+def settings_kb(paused: bool, dry_run: bool, is_owner: bool = False) -> InlineKeyboardMarkup:
     toggle = "▶️ Включить отправку" if paused else "⏸ Остановить отправку"
     mode = (
         "🚀 Перейти в боевой режим" if dry_run else "🧪 Вернуться в режим проверки"
@@ -155,6 +155,8 @@ def settings_kb(paused: bool, dry_run: bool) -> InlineKeyboardMarkup:
                 )
             ],
         ]
+        + ([[InlineKeyboardButton(text="👥 Доступ к боту", callback_data="acl:list")]]
+           if is_owner else [])
     )
 
 
@@ -188,3 +190,16 @@ def mode_confirm_kb(to_live: bool) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Отмена", callback_data="set:open")],
         ]
     )
+
+
+def access_kb(extra: Sequence[int]) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(text=f"👤 {user_id}", callback_data="noop"),
+            InlineKeyboardButton(text="🗑", callback_data=f"acl:del:{user_id}"),
+        ]
+        for user_id in extra
+    ]
+    rows.append([InlineKeyboardButton(text="➕ Дать доступ", callback_data="acl:add")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="set:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
