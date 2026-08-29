@@ -51,9 +51,18 @@ class Settings:
     proxy_url: str = ""
 
     @classmethod
-    def load(cls, env_file: str | os.PathLike[str] | None = ".env") -> "Settings":
-        if env_file and Path(env_file).exists():
-            load_dotenv(env_file)
+    def load(cls, env_file: str | os.PathLike[str] | None = None) -> "Settings":
+        # Без явного пути ищем .env рядом с проектом, а не только в текущей папке:
+        # иначе запуск из другого каталога молча остаётся без настроек.
+        candidates = (
+            [Path(env_file)]
+            if env_file
+            else [Path(".env"), Path(__file__).resolve().parent.parent / ".env"]
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                load_dotenv(candidate)
+                break
         return cls(
             bot_token=os.getenv("BOT_TOKEN", "").strip(),
             admin_ids=_ids("ADMIN_IDS"),
