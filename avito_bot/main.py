@@ -117,7 +117,79 @@ async def run() -> None:
         await bot.session.close()
 
 
+async def check() -> int:
+    """Предполётная проверка: настройки, связь с Telegram, база, аккаунт Авито."""
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+    settings = Settings.load()
+    problems: list[str] = []
+
+    print("Проверка настроек")
+    if settings.bot_token:
+        print("  BOT_TOKEN: задан")
+    else:
+        problems.append("BOT_TOKEN не задан в .env (возьмите токен у @BotFather)")
+    if settings.admin_ids:
+        print(f"  ADMIN_IDS: {', '.join(str(i) for i in sorted(settings.admin_ids))}")
+    else:
+        problems.append("ADMIN_IDS не заданы — бот не будет отвечать никому (@userinfobot)")
+    if not settings.secret_key:
+        print("  SECRET_KEY: не задан — секреты Авито будут храниться в открытом виде")
+    else:
+        print("  SECRET_KEY: задан")
+    print(f"  Режим: {'DRY-RUN, в Авито ничего не уходит' if settings.dry_run else 'боевой'}")
+    print(f"  Лимит: {settings.daily_limit} сообщений в сутки")
+
+    if problems:
+        print("\nНе хватает настроек:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+
+    print("\nСвязь с Telegram")
+    bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    try:
+        me = await bot.get_me()
+        print(f"  Бот на связи: @{me.username} (id {me.id})")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Не удалось подключиться: {exc}")
+        print("  Причины: неверный BOT_TOKEN, нет интернета или Telegram блокируется сетью.")
+        return 1
+    finally:
+        await bot.session.close()
+
+    print("\nБаза данных")
+    db = Database(settings.db_path)
+    try:
+        await db.connect()
+        await seed(db)
+        accounts = await db.list_accounts()
+        niches = await db.list_niches()
+        print(f"  Файл: {settings.db_path}")
+        print(f"  Аккаунтов Авито: {len(accounts)}, ниш: {len(niches)}")
+        if not accounts:
+            print("  Аккаунт добавляется в самом боте: /start → «👤 Аккаунты».")
+        elif not settings.dry_run:
+            active = await db.get_active_account()
+            if active is not None:
+                pool = GatewayPool(settings, SecretBox(settings.secret_key))
+                try:
+                    user_id = await pool.get(active).get_self_id()
+                    print(f"  Авито отвечает, user_id: {user_id}")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  Авито недоступен: {exc}")
+                    return 1
+                finally:
+                    await pool.aclose()
+    finally:
+        await db.close()
+
+    print("\nВсё готово. Запуск: python -m avito_bot")
+    return 0
+
+
 def main() -> None:
+    if "--check" in sys.argv[1:]:
+        sys.exit(asyncio.run(check()))
     try:
         asyncio.run(run())
     except (KeyboardInterrupt, SystemExit):

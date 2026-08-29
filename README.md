@@ -34,19 +34,36 @@ Telegram-бот, который отвечает заранее заготовл
 
 ## Быстрый старт (проверка работоспособности)
 
-Проверить всё можно без ключей Авито — в режиме `DRY_RUN=1`.
+Ключи Авито не нужны — проверка идёт в режиме `DRY_RUN=1` на встроенном симуляторе.
+
+**Вариант 1: одной командой** (Linux / macOS)
 
 ```bash
-git clone <этот репозиторий> && cd -
+git clone https://github.com/Nastyface144/-.git avito-bot
+cd avito-bot && git checkout claude/peaceful-wozniak-jbwywm
+./setup.sh
+```
+
+Скрипт сам поставит зависимости, спросит `BOT_TOKEN` (у [@BotFather](https://t.me/BotFather),
+команда `/newbot`) и ваш Telegram ID (у [@userinfobot](https://t.me/userinfobot)),
+сгенерирует `SECRET_KEY`, проверит связь с Telegram и запустит бота.
+
+**Вариант 2: руками**
+
+```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
 python tools/gen_key.py          # положите вывод в SECRET_KEY
-# впишите в .env: BOT_TOKEN (от @BotFather) и ADMIN_IDS (ваш id, @userinfobot)
+# впишите в .env: BOT_TOKEN и ADMIN_IDS
 
-python -m avito_bot
+python -m avito_bot --check      # предполётная проверка
+python -m avito_bot              # запуск
 ```
+
+`python -m avito_bot --check` проверяет настройки, связь с Telegram (покажет
+`@username` вашего бота), базу и — в боевом режиме — доступ к API Авито.
 
 Дальше — в Telegram:
 
@@ -77,7 +94,22 @@ pytest -q
 2. В `.env` поставьте `DRY_RUN=0`, задайте `SECRET_KEY`.
 3. Добавьте аккаунт в боте и нажмите «🔌 Проверить» — бот получит `user_id`
    и покажет число доступных чатов.
-4. Запустите: `docker compose up -d --build` (или `python -m avito_bot`).
+4. Запустите одним из способов:
+   - `docker compose up -d --build` — в Docker;
+   - через systemd: шаблон и инструкция в `deploy/avito-bot.service`.
+
+Боту нужен постоянно работающий компьютер или VPS: пока процесс не запущен,
+он не отвечает и не отправляет сообщения.
+
+## Безопасность
+
+- `BOT_TOKEN` и ключи Авито живут только в `.env` на вашей машине
+  (`.env` в `.gitignore`, `setup.sh` ставит на файл права `600`).
+  Не пересылайте их в переписке — токен даёт полный доступ к боту.
+  Если токен всё же засветился, в @BotFather команда `/revoke` выдаст новый.
+- `SECRET_KEY` шифрует `client_secret` аккаунтов в базе. Потеряете ключ —
+  аккаунты придётся добавить заново.
+- Бот отвечает только тем, чьи ID перечислены в `ADMIN_IDS`.
 
 ## Настройки (.env)
 

@@ -1,0 +1,24 @@
+# Автозапуск бота на сервере (systemd).
+#
+#   sudo cp deploy/avito-bot.service /etc/systemd/system/
+#   sudo nano /etc/systemd/system/avito-bot.service   # поправьте User и пути
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now avito-bot
+#   sudo systemctl status avito-bot        # состояние
+#   journalctl -u avito-bot -f             # логи
+
+[Unit]
+Description=Telegram-бот сообщений Авито
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=avito
+WorkingDirectory=/opt/avito-bot
+ExecStart=/opt/avito-bot/.venv/bin/python -m avito_bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
