@@ -8,6 +8,7 @@ import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -44,6 +45,7 @@ async def run() -> None:
 
     bot = Bot(
         token=settings.bot_token,
+        session=make_session(settings),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
@@ -85,6 +87,11 @@ async def run() -> None:
         await bot.session.close()
 
 
+def make_session(settings: Settings) -> AiohttpSession:
+    """Сессия Telegram; с некоторых хостингов до api.telegram.org нужен прокси."""
+    return AiohttpSession(proxy=settings.telegram_proxy_url or None)
+
+
 async def check() -> int:
     """Предполётная проверка: настройки, связь с Telegram, база, аккаунт Авито."""
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -114,13 +121,18 @@ async def check() -> int:
         return 1
 
     print("\nСвязь с Telegram")
-    bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(
+        token=settings.bot_token,
+        session=make_session(settings),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     try:
         me = await bot.get_me()
         print(f"  Бот на связи: @{me.username} (id {me.id})")
     except Exception as exc:  # noqa: BLE001
         print(f"  Не удалось подключиться: {exc}")
-        print("  Причины: неверный BOT_TOKEN, нет интернета или Telegram блокируется сетью.")
+        print("  Причины: неверный BOT_TOKEN, нет интернета или Telegram недоступен")
+        print("  с этого сервера. В последнем случае помогает TELEGRAM_PROXY_URL в .env.")
         return 1
     finally:
         await bot.session.close()

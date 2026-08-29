@@ -49,6 +49,7 @@ class Settings:
     secret_key: str = ""
     avito_api_base: str = "https://api.avito.ru"
     proxy_url: str = ""
+    telegram_proxy_url: str = ""
 
     @classmethod
     def load(cls, env_file: str | os.PathLike[str] | None = None) -> "Settings":
@@ -75,6 +76,7 @@ class Settings:
             secret_key=os.getenv("SECRET_KEY", "").strip(),
             avito_api_base=os.getenv("AVITO_API_BASE", "https://api.avito.ru").strip().rstrip("/"),
             proxy_url=os.getenv("PROXY_URL", "").strip(),
+            telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),
         )
 
     def is_admin(self, user_id: int) -> bool:
