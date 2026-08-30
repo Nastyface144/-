@@ -35,9 +35,30 @@ echo "Ставлю python3, venv, git…"
 # компилятора — под сотню мегабайт, которые боту не нужны (pip есть внутри venv).
 # shellcheck disable=SC2086
 apt-get $APT_OPTS install -y --no-install-recommends \
-    python3 python3-venv git ca-certificates \
+    python3 python3-venv git ca-certificates tmux \
     || die "не удалось поставить пакеты. Проверьте интернет на сервере: ping -c2 archive.ubuntu.com"
 echo "Готово: $(python3 --version), $(git --version)"
+
+# ---- 1.5 Подкачка ----------------------------------------------------------
+# На 1 ГБ без swap установке не хватает памяти: система убивает процессы,
+# и обрывается даже ssh-сессия. Файл подкачки это снимает.
+if [ "$(swapon --show --noheadings 2>/dev/null | wc -l)" -eq 0 ]; then
+    ram_mb=$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo)
+    if [ "$ram_mb" -lt 2048 ]; then
+        say "Добавляю файл подкачки (памяти всего ${ram_mb} МБ)"
+        if fallocate -l 2G /swapfile 2>/dev/null || \
+           dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none; then
+            chmod 600 /swapfile
+            mkswap /swapfile >/dev/null
+            swapon /swapfile
+            grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            echo "Подкачка включена: $(swapon --show --noheadings | awk '{print $3}')"
+        else
+            warn "Не удалось создать файл подкачки — продолжаю без него."
+            rm -f /swapfile
+        fi
+    fi
+fi
 
 # ---- 2. Пользователь и код -------------------------------------------------
 say "2/6 Готовлю каталог $APP_DIR"
