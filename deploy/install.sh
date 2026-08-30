@@ -48,7 +48,14 @@ say "1/6 Ставлю системные пакеты (1-3 минуты)"
 export DEBIAN_FRONTEND=noninteractive
 
 # Свежая Ubuntu в фоне ставит обновления безопасности и держит блокировку
-# пакетов. Ждём её, а если затянулось — аккуратно останавливаем службу.
+# пакетов; таймер может перезапускать её снова и снова. Глушим таймеры на
+# время установки и включаем обратно в конце.
+systemctl stop apt-daily.timer apt-daily-upgrade.timer \
+    unattended-upgrades.service apt-daily.service apt-daily-upgrade.service \
+    >/dev/null 2>&1 || true
+systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+pkill -9 -f 'unattended-upgr' >/dev/null 2>&1 || true
+
 if pgrep -f 'unattended-upgr' >/dev/null 2>&1; then
     echo "Ubuntu доустанавливает свои обновления, жду (до 3 минут)…"
     waited=0
@@ -182,6 +189,10 @@ if [ "$CHECK_OK" -eq 0 ]; then
 EOM
     exit 1
 fi
+
+# Возвращаем автообновления — глушили их только на время установки.
+systemctl unmask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+systemctl start apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
 
 cat <<EOM
 
