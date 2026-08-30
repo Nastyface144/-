@@ -86,8 +86,17 @@ chmod 600 "$APP_DIR/.env"
 
 # ---- 5. Проверка -----------------------------------------------------------
 say "5/6 Проверяю связь с Telegram"
-(cd "$APP_DIR" && sudo -u "$APP_USER" "$APP_DIR/.venv/bin/python" -m avito_bot --check) \
-    || die "проверка не прошла, см. сообщение выше."
+CHECK_OK=1
+(cd "$APP_DIR" && sudo -u "$APP_USER" "$APP_DIR/.venv/bin/python" -m avito_bot --check) || CHECK_OK=0
+if [ "$CHECK_OK" -eq 0 ]; then
+    # Не обрываем установку: чаще всего дело в прокси или опечатке в токене,
+    # и это правится в .env без повторной установки.
+    warn ""
+    warn "Проверка не прошла — см. сообщение выше. Установку продолжаю."
+    warn "Если Telegram недоступен с этого сервера, добавьте прокси:"
+    warn "  nano $APP_DIR/.env      # строка TELEGRAM_PROXY_URL="
+    warn "  systemctl restart $SERVICE"
+fi
 
 # ---- 6. Автозапуск ---------------------------------------------------------
 say "6/6 Настраиваю автозапуск"
@@ -100,6 +109,19 @@ systemctl enable --quiet --now "$SERVICE"
 systemctl restart "$SERVICE"
 sleep 2
 systemctl --no-pager --lines=5 status "$SERVICE" || true
+
+if [ "$CHECK_OK" -eq 0 ]; then
+    cat <<EOM
+
+Бот установлен, но проверка связи не прошла — сейчас он работать не будет.
+
+  Что показывает бот:  journalctl -u $SERVICE -n 30
+  Повторить проверку:  cd $APP_DIR && ./.venv/bin/python -m avito_bot --check
+  Настройки:           nano $APP_DIR/.env  (BOT_TOKEN, TELEGRAM_PROXY_URL)
+  После правки:        systemctl restart $SERVICE
+EOM
+    exit 1
+fi
 
 cat <<EOM
 
