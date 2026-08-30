@@ -55,10 +55,13 @@ fi
 mkdir -p "$APP_DIR/data"
 
 # ---- 3. Зависимости --------------------------------------------------------
-say "3/6 Ставлю зависимости"
+say "3/6 Ставлю зависимости (на медленном канале до 10 минут)"
 [ -x "$APP_DIR/.venv/bin/python" ] || python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
-"$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
+# Без --quiet: на медленном канале скачивание идёт минутами, и молчащий
+# экран выглядит зависшим.
+"$APP_DIR/.venv/bin/pip" install --progress-bar off -r "$APP_DIR/requirements.txt" \
+    || die "не удалось поставить библиотеки. Проверьте интернет: ping -c2 pypi.org"
 echo "Готово."
 
 # ---- 4. Настройки ----------------------------------------------------------
