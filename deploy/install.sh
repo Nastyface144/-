@@ -31,9 +31,12 @@ echo "Обновляю список пакетов…"
 # shellcheck disable=SC2086
 apt-get $APT_OPTS update || warn "Список пакетов обновить не удалось, пробую ставить как есть."
 echo "Ставлю python3, venv, git…"
+# --no-install-recommends: иначе python3-pip тянет build-essential и весь набор
+# компилятора — под сотню мегабайт, которые боту не нужны (pip есть внутри venv).
 # shellcheck disable=SC2086
-apt-get $APT_OPTS install -y python3 python3-venv python3-pip git ca-certificates \
-    || die "не удалось поставить пакеты. Проверьте интернет на сервере: ping -c2 deb.debian.org"
+apt-get $APT_OPTS install -y --no-install-recommends \
+    python3 python3-venv git ca-certificates \
+    || die "не удалось поставить пакеты. Проверьте интернет на сервере: ping -c2 archive.ubuntu.com"
 echo "Готово: $(python3 --version), $(git --version)"
 
 # ---- 2. Пользователь и код -------------------------------------------------
