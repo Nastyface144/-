@@ -24,6 +24,30 @@ die()  { printf '\033[31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 # ---- 1. Системные пакеты ---------------------------------------------------
 say "1/6 Ставлю системные пакеты (1-3 минуты)"
 export DEBIAN_FRONTEND=noninteractive
+
+# Свежая Ubuntu в фоне ставит обновления безопасности и держит блокировку
+# пакетов. Ждём её, а если затянулось — аккуратно останавливаем службу.
+if pgrep -f 'unattended-upgr' >/dev/null 2>&1; then
+    echo "Ubuntu доустанавливает свои обновления, жду (до 10 минут)…"
+    waited=0
+    while pgrep -f 'unattended-upgr' >/dev/null 2>&1 && [ "$waited" -lt 600 ]; do
+        printf '.'
+        sleep 10
+        waited=$((waited + 10))
+    done
+    echo
+    if pgrep -f 'unattended-upgr' >/dev/null 2>&1; then
+        warn "Обновления идут дольше 10 минут — останавливаю их, чтобы продолжить."
+        systemctl stop unattended-upgrades >/dev/null 2>&1 || true
+        # Даём процессу завершить текущий пакет, чтобы не оставить dpkg сломанным.
+        waited=0
+        while pgrep -f 'unattended-upgr' >/dev/null 2>&1 && [ "$waited" -lt 120 ]; do
+            sleep 5
+            waited=$((waited + 5))
+        done
+    fi
+    echo "Пакеты свободны, продолжаю."
+fi
 # На свежем сервере Ubuntu часто сама ставит обновления и держит блокировку apt.
 # Ждём её до 10 минут вместо того, чтобы падать или молча висеть.
 APT_OPTS="-o DPkg::Lock::Timeout=600"
