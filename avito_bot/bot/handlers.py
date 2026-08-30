@@ -685,6 +685,34 @@ async def noop(call: CallbackQuery) -> None:
     await call.answer()
 
 
+async def install_show(call: CallbackQuery, ctx: AppContext) -> None:
+    """Готовая команда для установки бота на сервер — чтобы не искать её в переписке."""
+    if not ctx.is_owner(call.from_user.id):
+        await call.answer("Это делает владелец бота", show_alert=True)
+        return
+    command = f"curl -fsSL {ctx.settings.install_script_url} | sudo bash"
+    await call.message.answer(
+        "<b>Установка на сервер</b>\n\n"
+        "Чтобы бот работал круглосуточно, ему нужен сервер (VPS). "
+        "Хватит самого простого: 1 ГБ памяти, одно ядро, система <b>Ubuntu</b>.\n\n"
+        "<b>Шаг 1.</b> В кабинете провайдера откройте консоль сервера — "
+        "она называется «Консоль» или VNC и работает прямо в браузере, "
+        "в том числе с телефона.\n\n"
+        "<b>Шаг 2.</b> Вставьте туда эту команду и нажмите Enter:\n"
+        f"<code>{esc(command)}</code>\n\n"
+        "<b>Шаг 3.</b> Установщик спросит два значения:\n"
+        "• <b>BOT_TOKEN</b> — тот же токен, что вы брали у @BotFather;\n"
+        f"• <b>ваш ID</b> — это <code>{call.from_user.id}</code>\n\n"
+        "Дальше он всё сделает сам и запустит бота. Сервер перезагрузится — "
+        "бот поднимется автоматически.\n\n"
+        "⚠️ После запуска на сервере <b>остановите бота на компьютере</b> "
+        "(Ctrl+C в окне): два бота с одним токеном будут мешать друг другу.\n\n"
+        "Настройки и тексты на сервер не переедут — их проще задать заново "
+        "через мастер. Та же команда позже обновляет бота до свежей версии."
+    )
+    await call.answer()
+
+
 # ---------------------------------------------------------------- аккаунты Авито
 
 async def show_accounts(target: Message, ctx: AppContext) -> None:
@@ -825,6 +853,8 @@ def build_router() -> Router:
     on_call(settings_open, F.data == "set:open")
     on_call(settings_pause, F.data == "set:pause")
     on_call(settings_number, F.data.startswith("set:num:"))
+
+    on_call(install_show, F.data == "install:show")
 
     on_call(access_list, F.data == "acl:list")
     on_call(access_add, F.data == "acl:add")

@@ -50,6 +50,10 @@ class Settings:
     avito_api_base: str = "https://api.avito.ru"
     proxy_url: str = ""
     telegram_proxy_url: str = ""
+    install_script_url: str = (
+        "https://raw.githubusercontent.com/Nastyface144/-/"
+        "claude/peaceful-wozniak-jbwywm/deploy/install.sh"
+    )
 
     @classmethod
     def load(cls, env_file: str | os.PathLike[str] | None = None) -> "Settings":
@@ -77,6 +81,11 @@ class Settings:
             avito_api_base=os.getenv("AVITO_API_BASE", "https://api.avito.ru").strip().rstrip("/"),
             proxy_url=os.getenv("PROXY_URL", "").strip(),
             telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),
+            **(
+                {"install_script_url": os.getenv("INSTALL_SCRIPT_URL", "").strip()}
+                if os.getenv("INSTALL_SCRIPT_URL", "").strip()
+                else {}
+            ),
         )
 
     def is_admin(self, user_id: int) -> bool:

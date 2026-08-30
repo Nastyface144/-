@@ -460,4 +460,29 @@ def test_owner_grants_access_from_the_bot(tmp_path):
             await click("acl:del:999")
             assert 999 not in await ctx.db.extra_admins()
 
+            # Команду установки на сервер видит только владелец.
+            await dp.feed_update(
+                bot,
+                Update(
+                    update_id=next(counter),
+                    callback_query=CallbackQuery(
+                        id=str(next(counter)),
+                        from_user=guest,
+                        chat_instance="ci",
+                        data="install:show",
+                        message=Message(
+                            message_id=next(counter),
+                            date=dt.datetime.now(dt.timezone.utc),
+                            chat=guest_chat,
+                            text="menu",
+                        ),
+                    ),
+                ),
+            )
+            assert "sudo bash" not in session.last
+
+            await click("install:show")
+            assert "install.sh | sudo bash" in session.last
+            assert str(ADMIN_ID) in session.last  # подставлен номер владельца
+
     asyncio.run(scenario())

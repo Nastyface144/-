@@ -155,8 +155,18 @@ def settings_kb(paused: bool, dry_run: bool, is_owner: bool = False) -> InlineKe
                 )
             ],
         ]
-        + ([[InlineKeyboardButton(text="👥 Доступ к боту", callback_data="acl:list")]]
-           if is_owner else [])
+        + (
+            [
+                [InlineKeyboardButton(text="👥 Доступ к боту", callback_data="acl:list")],
+                [
+                    InlineKeyboardButton(
+                        text="📦 Установить на сервер", callback_data="install:show"
+                    )
+                ],
+            ]
+            if is_owner
+            else []
+        )
     )
 
 
