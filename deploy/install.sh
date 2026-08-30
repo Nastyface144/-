@@ -22,10 +22,18 @@ die()  { printf '\033[31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "запустите с правами root: sudo $0"
 
 # ---- 1. Системные пакеты ---------------------------------------------------
-say "1/6 Ставлю системные пакеты"
+say "1/6 Ставлю системные пакеты (1-3 минуты)"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git ca-certificates >/dev/null
+# На свежем сервере Ubuntu часто сама ставит обновления и держит блокировку apt.
+# Ждём её до 10 минут вместо того, чтобы падать или молча висеть.
+APT_OPTS="-o DPkg::Lock::Timeout=600"
+echo "Обновляю список пакетов…"
+# shellcheck disable=SC2086
+apt-get $APT_OPTS update || warn "Список пакетов обновить не удалось, пробую ставить как есть."
+echo "Ставлю python3, venv, git…"
+# shellcheck disable=SC2086
+apt-get $APT_OPTS install -y python3 python3-venv python3-pip git ca-certificates \
+    || die "не удалось поставить пакеты. Проверьте интернет на сервере: ping -c2 deb.debian.org"
 echo "Готово: $(python3 --version), $(git --version)"
 
 # ---- 2. Пользователь и код -------------------------------------------------
